@@ -379,7 +379,7 @@ function setSession(j,name,remember){
 const sbAuth=(path,body)=>fetch(SB_URL+"/auth/v1/"+path,{method:"POST",headers:{apikey:SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body)});
 function lockApp(msg){
   auth=null;[localStorage,sessionStorage].forEach(st=>{st.removeItem(AK);st.removeItem(SK)});
-  const f=$("#lform");f.reset();$("#lr").checked=true;$("#lerr").textContent=msg||"";
+  const f=$("#lform");f.reset();$("#lerr").textContent=msg||"";
   document.body.classList.add("locked");ic()
 }
 async function token(){
@@ -403,13 +403,10 @@ function enter(name){
 }
 function initLogin(){
   const f=$("#lform"),err=$("#lerr");let creating=false;
-  f.querySelector(".lrow").insertAdjacentHTML("afterend",'<p style="text-align:center;margin:10px 0 0"><button type="button" class="lforgot" id="lnew"></button></p>');
-  const mode=()=>{$("#lgot").textContent=creating?"Create & Login":"Login";$("#lnew").textContent=creating?"Already have a login? Sign in":"New staff? Create login";$("#lhint").textContent=creating?"Use your email and a password (min 6 characters). It works on all devices.":"";$("#lp").autocomplete=creating?"new-password":"current-password";err.textContent=""};
+  const mode=()=>{$("#lgot").textContent="Login";$("#lhint").textContent="";$("#lp").autocomplete="current-password";err.textContent=""};
   const bad=m=>{err.textContent=m;f.classList.remove("shake");void f.offsetWidth;f.classList.add("shake")};
   $("#lu").placeholder="Email";$("#lu").type="email";mode();
-  $("#lnew").onclick=()=>{creating=!creating;mode()};
   $("#leye").onclick=()=>{const p=$("#lp"),s=p.type==="password";p.type=s?"text":"password";$("#leye").innerHTML='<i data-lucide="'+(s?"eye-off":"eye")+'"></i>';ic()};
-  $("#lforgot").onclick=()=>alert("Password maatha: Supabase Dashboard > Authentication > Users la andha user ku password reset pannalaam. Illana puthu staff login create pannunga.");
   $("#outBtn").onclick=()=>{lockApp();creating=false;mode()};
   f.onsubmit=async e=>{
     e.preventDefault();err.textContent="";
@@ -424,14 +421,14 @@ function initLogin(){
       if(creating&&r.ok&&!j.access_token){r=await sbAuth("token?grant_type=password",{email,password:pw});j=await r.json();
         if(!j.access_token)return bad("Account created but Supabase needs email confirmation. Turn OFF 'Confirm email' in Authentication settings.")}
       if(!r.ok||!j.access_token)return bad(creating?(/already/i.test(j.msg||j.message||"")?"This username is taken. Try another.":(j.msg||j.error_description||"Could not create login.")):"Wrong username or password.");
-      const nm=(j.user&&j.user.user_metadata&&j.user.user_metadata.name)||name.split("@")[0],rem=$("#lr").checked;
+      const nm=(j.user&&j.user.user_metadata&&j.user.user_metadata.name)||name.split("@")[0],rem=true;
       setSession(j,nm,rem);
       const us=getUsers();us[key]={name:nm,h:hh(pw)};localStorage.setItem(UK,JSON.stringify(us));
       (rem?localStorage:sessionStorage).setItem(SK,nm);
-      f.reset();$("#lr").checked=true;creating=false;mode();enter(nm)
+      f.reset();creating=false;mode();enter(nm)
     }catch{
       const us=getUsers();
-      if(!creating&&us[key]&&us[key].h===hh(pw)){loadAuth();(($("#lr").checked?localStorage:sessionStorage)).setItem(SK,us[key].name);f.reset();$("#lr").checked=true;enter(us[key].name)}
+      if(!creating&&us[key]&&us[key].h===hh(pw)){loadAuth();((true?localStorage:sessionStorage)).setItem(SK,us[key].name);f.reset();enter(us[key].name)}
       else bad("No internet. Offline login works only for accounts already used on this device.")
     }finally{btn.disabled=false}
   };
@@ -461,21 +458,30 @@ function normDb(){
   db.tpl=db.tpl&&db.tpl.length?db.tpl:TPL();db.sent=db.sent||{};db.msgs=db.msgs||{};
   db.apps.forEach(a=>{a.docs=a.docs||[];a.log=a.log||[];a.upd=a.upd||a.ts;a.gov=a.gov||0;a.charge=a.charge||0})
 }
+async function cfgPull(h){
+  const r=await fetch(SB_URL+"/rest/v1/app_data?id=eq.allfa-config&select=data",{headers:h,cache:"no-store"});
+  if(!r.ok)return false;const rows=await r.json();if(!rows.length)return false;
+  const c=rows[0].data||{};let ch=false;
+  if(Array.isArray(c.prices)&&c.prices.length&&JSON.stringify(c.prices)!==JSON.stringify(db.services)){db.services=c.prices;ch=true}
+  if(Array.isArray(c.tpl)&&c.tpl.length&&JSON.stringify(c.tpl)!==JSON.stringify(db.tpl)){db.tpl=c.tpl;ch=true}
+  if(ch){localStorage.setItem("esevaiPro.prices",JSON.stringify(db.services));localStorage.setItem(KEY,JSON.stringify(db))}
+  return ch
+}
 async function cloudPull(){
   if(cloudBusy||cloudTimer||!auth)return;
   try{
     const h=await hdr();if(!h)return;
     const r=await fetch(SB_URL+"/rest/v1/app_data?id=eq."+SB_ROW+"&select=data",{headers:h,cache:"no-store"});
     if(!r.ok)throw new Error(r.status);
-    const rows=await r.json();
-    if(!rows.length){await cloudFlush();return}
-    const remote=rows[0].data||{},rts=+remote._ts||0,lts=+db._ts||0;
-    if(localStorage.getItem("esevaiPro.dirty")||lts>rts){await cloudFlush();return}
-    if(rts>lts){
-      if($("#modal").classList.contains("open"))return;
-      db=remote;normDb();localStorage.setItem(KEY,JSON.stringify(db));
-      if(!document.body.classList.contains("locked"))go();
+    const rows=await r.json();let ch=false;
+    if(!rows.length)await cloudFlush();
+    else{
+      const remote=rows[0].data||{},rts=+remote._ts||0,lts=+db._ts||0;
+      if(localStorage.getItem("esevaiPro.dirty")||lts>rts)await cloudFlush();
+      else if(rts>lts&&!$("#modal").classList.contains("open")){db=remote;normDb();localStorage.setItem(KEY,JSON.stringify(db));ch=true}
     }
+    if(await cfgPull(h))ch=true;   /* prices + document lists set by admin */
+    if(ch&&!$("#modal").classList.contains("open")&&!document.body.classList.contains("locked"))go();
     cloudState("ok")
   }catch(e){cloudState("off")}
 }
