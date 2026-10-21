@@ -1,4 +1,4 @@
-const CACHE = "allfa-esevai-v3";
+const CACHE = "allfa-esevai-v4";
 const SHELL = ["./","store.html","store.css","store.js","manifest.json","icon-192.png","icon-512.png","allfa-logo-purple.png","favicon.png",
   "admin.html","admin.css","admin.js","admin-manifest.json","admin-icon-192.png","admin-icon-512.png","allfa-logo.png","admin-favicon.png"];
 
@@ -21,6 +21,7 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET" || !req.url.startsWith("http")) return;
+  if (req.url.includes(".supabase.co")) return; // never cache cloud data
 
   // Pages: network first (always fresh when online), cache when offline
   if (req.mode === "navigate") {
