@@ -1,8 +1,9 @@
 {
+  "id": "./",
   "name": "Allfa E-Sevai Maiyam",
   "short_name": "Allfa E-Sevai",
   "description": "Xerox, Print & Applications billing app",
-  "start_url": "store.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
