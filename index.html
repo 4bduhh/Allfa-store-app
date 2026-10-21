@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E-Sevai Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+Tamil:wght@400;600&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4b2557">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Allfa E-Sevai">
+<link rel="stylesheet" href="store.css">
+<script src="https://unpkg.com/lucide@0.468.0"></script>
+</head>
+<body class="locked">
+<section class="login" id="login" aria-label="Login">
+  <div class="orbs"><i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i><i class="orb o4"></i></div>
+  <form class="lcard" id="lform" autocomplete="on">
+    <div class="logo"><img src="allfa-logo-purple.png" alt="Allfa"></div>
+    <h1>Welcome Back</h1>
+    <p class="lsub">Sign in to continue</p>
+    <p class="lhint" id="lhint"></p>
+    <label class="lf"><i data-lucide="user-round"></i><input id="lu" placeholder="Username" autocomplete="username" required></label>
+    <label class="lf"><i data-lucide="lock-keyhole"></i><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button type="button" class="eye" id="leye" aria-label="Show password"><i data-lucide="eye"></i></button></label>
+    <p class="lerr" id="lerr" role="alert"></p>
+    <div class="lrow"><label class="rm"><input type="checkbox" id="lr" checked><span class="cb"></span>Remember me</label><button type="button" class="lforgot" id="lforgot">Forgot password?</button></div>
+    <button class="lbtn" type="submit"><span id="lgot">Login</span><span class="arr"><i data-lucide="arrow-right"></i></span></button>
+    <div class="lor"><span>Allfa E-Sevai Maiyam</span></div>
+    <p class="ltag">Xerox &bull; Print &bull; Applications</p>
+  </form>
+</section>
+<div class="shell">
+  <aside class="side" id="side">
+    <div class="brand"><span class="mark"><i data-lucide="printer"></i></span><div><b>E-Sevai Pro</b><small>Allfa E-Sevai Maiyam</small></div></div>
+    <nav>
+      <a data-page="dashboard" href="#dashboard"><i data-lucide="house"></i>Home</a>
+      <a data-page="pos" href="#pos" class="hot"><i data-lucide="scan-line"></i>Quick bill</a>
+      <a data-page="applications" href="#applications"><i data-lucide="files"></i>Applications <em id="navPending"></em></a>
+      <a data-page="reminders" href="#reminders"><i data-lucide="bell-ring"></i>Reminders <em id="navRem"></em></a>
+      <a data-page="bills" href="#bills"><i data-lucide="receipt"></i>Bills &amp; dues</a>
+      <a data-page="customers" href="#customers"><i data-lucide="users"></i>Customers</a>
+      <a data-page="services" href="#services"><i data-lucide="tags"></i>Price list</a>
+    </nav>
+    <div class="side-foot"><button class="ghost" id="staffBtn"><i data-lucide="user-round"></i> Staff</button><button class="ghost" id="outBtn"><i data-lucide="log-out"></i> Log out</button><small>Billing as this staff member.</small></div>
+  </aside>
+  <main>
+    <header class="top"><button class="icon menu" id="menuBtn" aria-label="Menu"><i data-lucide="menu"></i></button><h1 id="title">Dashboard</h1><div class="top-r"><span id="today"></span><button class="btn pri" id="topNew"><i data-lucide="plus"></i>New application</button></div></header>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+<div class="modal" id="modal"><form id="mform"></form></div>
+<div class="toast" id="toast"></div>
+<div id="printArea"></div>
+<script src="store.js"></script>
+<script>if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))</script>
+</body>
+</html>
