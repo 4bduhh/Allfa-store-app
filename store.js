@@ -23,7 +23,7 @@ const TPL=()=>[
  {name:"Voter ID",docs:["Aadhaar card","Passport photo","Age proof","Address proof"],gov:0,fee:100,days:30,renew:0},
  {name:"Ration Card",docs:["Aadhaar of all members","Address proof","Passport photo","Gas connection proof"],gov:0,fee:100,days:30,renew:0},
  {name:"Patta / Chitta",docs:["Survey no. / old patta copy","Aadhaar card","Land document copy"],gov:0,fee:100,days:7,renew:0}];
-db.tpl=db.tpl&&db.tpl.length?db.tpl:TPL();db.sent=db.sent||{};db.msgs=db.msgs||{};
+db.tpl=db.tpl&&db.tpl.length?db.tpl:TPL();db.sent=db.sent||{};db.msgs=db.msgs||{};db.docs=db.docs||[];db.delq=db.delq||[];
 db.apps.forEach(a=>{a.status={Pending:"Submitted",Processing:"Under process"}[a.status]||a.status;a.docs=a.docs||[];a.log=a.log||[];a.upd=a.upd||a.ts;a.gov=a.gov||0;a.charge=a.charge||0});
 Object.keys(db.sent).forEach(k=>{if(db.sent[k]!==today())delete db.sent[k]});
 const addD=(s,n)=>dstr(new Date(s+"T12:00:00").getTime()+n*864e5),addM=(s,n)=>{const d=new Date(s+"T12:00:00");d.setMonth(d.getMonth()+n);return dstr(d)};
@@ -152,14 +152,15 @@ function editCust(k){
   form("Edit customer","Changes apply to all their bills, applications and reminders.",[{k:"name",l:"Customer name *",req:1,v:x.customer,full:1},{k:"phone",l:as.length?"Phone *":"Phone",req:as.length?1:0,pat:"[0-9]{10}",v:x.phone||"",p:"10 digits"}],"Save changes",d=>{
     const n=d.name.trim(),p=d.phone.trim(),np=p||n.toLowerCase();
     if(np!==k&&(cB(np).length||cA(np).length)&&!confirm("Another customer already uses this "+(p?"phone number":"name")+". Merge them into one?"))return;
+    if(x.phone)(db.docs||[]).forEach(dd=>{if(dd.phone===x.phone)dd.phone=p});
     bs.forEach(b=>{b.customer=n;b.phone=p});as.forEach(a=>{a.customer=n;a.phone=p});rs.forEach(r=>{r.name=n;r.phone=p});
     save();toast("Customer updated");go()});
   delBtn(()=>{if(delCust(k)){closeM();go()}});
 }
 function delCust(k){
-  const bs=cB(k),as=cA(k),rs=cR(k),x=bs[0]||as[0];if(!x)return false;const dd=sum(bs,due);
-  if(!confirm("Delete customer "+x.customer+"?\n\nThis permanently removes "+bs.length+" bill(s), "+as.length+" application(s) and "+rs.length+" reminder(s)"+(dd>0?", including an unpaid balance of "+money(dd):"")+".\nThis cannot be undone."))return false;
-  db.bills=db.bills.filter(b=>!bs.includes(b));db.apps=db.apps.filter(a=>!as.includes(a));db.reminders=db.reminders.filter(r=>!rs.includes(r));save();toast("Customer deleted");return true;
+  const bs=cB(k),as=cA(k),rs=cR(k),x=bs[0]||as[0];if(!x)return false;const dd=sum(bs,due),nd=(db.docs||[]).filter(d=>x.phone&&d.phone===x.phone).length;
+  if(!confirm("Delete customer "+x.customer+"?\n\nThis permanently removes "+bs.length+" bill(s), "+as.length+" application(s) and "+rs.length+" reminder(s), "+nd+" document(s)"+(dd>0?", including an unpaid balance of "+money(dd):"")+".\nThis cannot be undone."))return false;
+  if(x.phone)(db.docs||[]).filter(d=>d.phone===x.phone).forEach(dropDoc);db.bills=db.bills.filter(b=>!bs.includes(b));db.apps=db.apps.filter(a=>!as.includes(a));db.reminders=db.reminders.filter(r=>!rs.includes(r));save();toast("Customer deleted");return true;
 }
 
 /* Home */
@@ -228,20 +229,24 @@ function draw(keep){
 const docTag=a=>{const m=a.docs.filter(x=>!x.ok).length;return a.docs.length?(m?`<span class="tag t-due">${m} missing</span>`:`<span class="tag t-ok">Docs ✓</span>`):"–"};
 const chg=(n,t)=>{const s=db.services.find(x=>x.name===n);return s?s.price:t?t.fee:0};
 function newApp(){
+  const stg={files:[],reuse:new Set(),seen:new Set(),type:DT[0]};
   const T=db.tpl,tp=n=>T.find(t=>t.name===n),t0=T[0]||{name:"",docs:[],gov:0,fee:0,days:7,renew:0},rl=m=>(RN.find(r=>r[1]===m)||RN[0])[0];
-  form("New application","Create the case file, bill it and track the documents.",[{k:"phone",l:"Phone *",req:1,pat:"[0-9]{10}",p:"10 digits"},{k:"customer",l:"Customer name *",req:1},{k:"hist",t:"html"},{k:"service",l:"Service",t:"select",o:[...T.map(t=>t.name),"Other service"]},{k:"due",l:"Expected completion",t:"date",v:addD(today(),t0.days)},{k:"charge",l:"Service charge (₹) *",t:"number",req:1,v:chg(t0.name,t0)},{k:"gov",l:"Official fee (₹)",t:"number",v:t0.gov},{k:"recv",l:"Amount received (₹)",t:"number",v:0},{k:"renew",l:"Renewal reminder",t:"select",o:RN.map(r=>r[0]),v:rl(t0.renew)},{k:"dl",t:"html"},{k:"notes",l:"Notes",t:"area",full:1}],"Create application",d=>{
-    const t=tp(d.service)||{docs:[]},docs=t.docs.map((n,i)=>({n,ok:!!d["c"+i]})),items=[{name:d.service,cat:GV,price:+d.charge||0,qty:1}];
+  form("New application","Create the case file, bill it and track the documents.",[{k:"phone",l:"Phone *",req:1,pat:"[0-9]{10}",p:"10 digits"},{k:"customer",l:"Customer name *",req:1},{k:"hist",t:"html"},{k:"service",l:"Service",t:"select",o:[...T.map(t=>t.name),"Other service"]},{k:"due",l:"Expected completion",t:"date",v:addD(today(),t0.days)},{k:"charge",l:"Service charge (₹) *",t:"number",req:1,v:chg(t0.name,t0)},{k:"gov",l:"Official fee (₹)",t:"number",v:t0.gov},{k:"recv",l:"Amount received (₹)",t:"number",v:0},{k:"renew",l:"Renewal reminder",t:"select",o:RN.map(r=>r[0]),v:rl(t0.renew)},{k:"dl",t:"html"},{k:"dz",t:"html"},{k:"notes",l:"Notes",t:"area",full:1}],"Create application",d=>{
+    const t=tp(d.service)||{docs:[]},docs=t.docs.map((n,i)=>({n,ok:!!d["c"+i]||hasDoc(stg,d.phone,n)})),items=[{name:d.service,cat:GV,price:+d.charge||0,qty:1}];
     if(+d.gov)items.push({name:"Official fee – "+d.service,cat:"Fee",price:+d.gov,qty:1});
     const b=addBill({customer:d.customer.trim(),phone:d.phone,items,paid:+d.recv||0,mode:"Cash"});
     const a={id:"A-"+(++db.seq.a),ts:Date.now(),upd:Date.now(),customer:d.customer.trim(),phone:d.phone,service:d.service,due:d.due,notes:d.notes,status:docs.some(x=>!x.ok)?"Docs pending":"Submitted",billId:b.id,docs,held:!!d.held,ack:"",gov:+d.gov||0,charge:+d.charge||0,renew:RN.find(r=>r[0]===d.renew)[1],assigned:staff(),log:[]};
-    logA(a,"Application created · "+a.status);db.apps.unshift(a);save();toast("Application created");go();
+    logA(a,"Application created · "+a.status);db.apps.unshift(a);attachDocs(a,stg);save();toast("Application created");go();
     if(confirm("Print acknowledgment slip for the customer?"))ackSlip(a);
   });
   const F=$("#mform"),q=s=>F.querySelector(s);
   const dl=()=>{const t=tp(q("[name=service]").value);q("#dl").innerHTML=`${t?`<b style="font-size:13px">Documents received</b><div class="ckl">${t.docs.map((x,i)=>`<label class="ck"><input type="checkbox" name="c${i}"> ${esc(x)}</label>`).join("")}</div>`:`<small style="color:var(--mut)">Other service – list the documents in Notes.</small>`}<div class="ckl"><label class="ck"><input type="checkbox" name="held"> <b>Original documents taken &amp; held at shop</b></label></div>`};
   dl();
+  docZone(q("#dz"),stg,()=>q("[name=phone]").value.trim(),o=>{const n=q("[name=customer]"),nt=q("[name=notes]"),ph=q("[name=phone]");if(o.name&&!n.value)n.value=o.name;
+    if(o.phone&&ph&&!ph.value.trim()){ph.value=o.phone;ph.dispatchEvent(new Event("input",{bubbles:true}))}
+    if(!nt.value)nt.value=[o.docType,o.dob&&"DOB "+o.dob.split("-").reverse().join("-"),o.yob&&!o.dob&&"YOB "+o.yob,o.gender,o.last4&&"Aadhaar ••••"+o.last4,o.idno&&"ID "+o.idno,o.guardian&&"S/D/W of "+o.guardian,o.addr].filter(Boolean).join(" · ")});
   q("[name=service]").onchange=e=>{const t=tp(e.target.value);if(t){q("[name=charge]").value=chg(t.name,t);q("[name=gov]").value=t.gov;q("[name=due]").value=addD(today(),t.days);q("[name=renew]").value=rl(t.renew)}dl()};
-  q("[name=phone]").oninput=e=>{const p=e.target.value,h=q("#hist");h.innerHTML="";if(p.length!==10)return;
+  q("[name=phone]").oninput=e=>{stg.render&&stg.render();const p=e.target.value,h=q("#hist");h.innerHTML="";if(p.length!==10)return;
     const as=db.apps.filter(a=>a.phone===p),bs=db.bills.filter(x=>x.phone===p),c=(as[0]||bs[0]||{}).customer,bal=sum(bs,due);
     if(c&&!q("[name=customer]").value)q("[name=customer]").value=c;
     if(c)h.innerHTML=`<div class="note"><b>Returning customer</b> · ${as.length} application${as.length===1?"":"s"}${as[0]?` · last: ${esc(as[0].service)} (${as[0].status})`:""}${bal>0?` · <b style="color:var(--red)">balance ${money(bal)}</b>`:""}</div>`};
@@ -261,9 +266,10 @@ function openApp(id){
   <label class="full">Notes<textarea name="notes" rows="2">${esc(a.notes||"")}</textarea></label>
   <div class="full note">Official fee ${money(a.gov)} · Service charge ${money(a.charge)} · ${b?(due(b)>0?`<b style="color:var(--red)">Balance ${money(due(b))}</b> <button type="button" class="btn sm pri" id="cc">Collect</button>`:"<b>Paid</b>"):"No bill"}</div>
   ${oth.length?`<div class="full"><b style="font-size:13px">Earlier applications</b><br><small style="color:var(--mut)">${oth.slice(0,5).map(x=>`${x.id} ${esc(x.service)} (${x.status})`).join(" · ")}</small></div>`:""}
+  ${docSec(a)}
   <div class="full"><b style="font-size:13px">Timeline</b><div class="tlg">${[...a.log].reverse().map(l=>`<div><i></i><span><b>${esc(l.m)}</b><small>${esc(l.by)} · ${new Date(l.t).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"})}</small></span></div>`).join("")||"<small>No history</small>"}</div></div>
   </div><div class="ma"><button type="button" class="btn" id="mc">Close</button><button type="button" class="btn" id="pr"><i data-lucide="printer"></i>Ack slip</button><button type="button" class="btn" id="ed"><i data-lucide="pencil"></i>Edit details</button><button type="button" class="btn dng" id="dl"><i data-lucide="trash-2"></i>Delete</button><button class="btn pri">Save</button></div>`;
-  $("#modal").classList.add("open");ic();$("#mc").onclick=closeM;$("#pr").onclick=()=>ackSlip(a);$("#ed").onclick=()=>editApp(id);$("#dl").onclick=()=>{if(delApp(id)){closeM();go()}};
+  $("#modal").classList.add("open");ic();$("#mc").onclick=closeM;$("#pr").onclick=()=>ackSlip(a);docSecInit(a);$("#ed").onclick=()=>editApp(id);$("#dl").onclick=()=>{if(delApp(id)){closeM();go()}};
   F.querySelector("[name=status]").onchange=e=>{$("#rj").style.display=e.target.value==="Rejected"?"grid":"none"};
   const cc=$("#cc");if(cc)cc.onclick=()=>{const x=Number(prompt("Amount received (₹)",due(b)));if(x>0&&x<=due(b)){b.paid+=x;b.pays.push({d:today(),a:x});logA(a,"Collected "+money(x));save();openApp(id);toast(money(x)+" collected")}else if(x)toast("Enter an amount up to "+money(due(b)))};
   F.onsubmit=e=>{e.preventDefault();const d=Object.fromEntries(new FormData(F));let s=d.status;
@@ -320,8 +326,8 @@ function custs(){
   db.apps.forEach(a=>{const k=a.phone;if(!m[k])m[k]={k,n:a.customer,p:a.phone,v:0,d:0}});
   const l=Object.values(m).sort((a,b)=>b.v-a.v);
   $("#view").innerHTML=`<div class="panel"><div class="ph"><div><h2>Customers</h2><p>Built from bills and applications.</p></div><input id="cs" placeholder="Search name / phone" style="width:210px"></div><div id="cl"></div></div>`;
-  const d=()=>{const q=$("#cs").value.toLowerCase();$("#cl").innerHTML=tbl(["Customer","Phone","#Visits","#Balance",""],l.filter(c=>(c.n+c.p).toLowerCase().includes(q)).map(c=>`<tr><td><b>${esc(c.n)}</b></td><td>${esc(c.p||"–")}</td><td class="n">${c.v}</td><td class="n">${c.d?`<span class="tag t-due">${money(c.d)}</span>`:"–"}</td><td class="n">${wa(c.p,`Hello ${c.n}, greetings from Allfa E-Sevai Maiyam.`)} ${ib("data-cedit",c.k,"pencil","Edit customer")}${ib("data-cdel",c.k,"trash-2","Delete customer","dng")}</td></tr>`),emp("users","No customers yet","Enter a name on a bill or application to start the list."))};
-  d();$("#cs").oninput=d;$("#cl").onclick=e=>{const ce=e.target.closest("[data-cedit]"),cd=e.target.closest("[data-cdel]");if(ce)editCust(ce.dataset.cedit);if(cd&&delCust(cd.dataset.cdel))custs()};
+  const d=()=>{const q=$("#cs").value.toLowerCase();$("#cl").innerHTML=tbl(["Customer","Phone","#Visits","#Balance",""],l.filter(c=>(c.n+c.p).toLowerCase().includes(q)).map(c=>`<tr><td><b>${esc(c.n)}</b></td><td>${esc(c.p||"–")}</td><td class="n">${c.v}</td><td class="n">${c.d?`<span class="tag t-due">${money(c.d)}</span>`:"–"}</td><td class="n">${wa(c.p,`Hello ${c.n}, greetings from Allfa E-Sevai Maiyam.`)} ${c.p?ib("data-cdoc",c.p,"folder-open","Documents"+((db.docs||[]).filter(d=>d.phone===c.p).length?" ("+db.docs.filter(d=>d.phone===c.p).length+")":"")):""}${ib("data-cedit",c.k,"pencil","Edit customer")}${ib("data-cdel",c.k,"trash-2","Delete customer","dng")}</td></tr>`),emp("users","No customers yet","Enter a name on a bill or application to start the list."))};
+  d();$("#cs").oninput=d;$("#cl").onclick=e=>{const cdc=e.target.closest("[data-cdoc]");if(cdc){const x=db.apps.find(a=>a.phone===cdc.dataset.cdoc)||db.bills.find(b=>b.phone===cdc.dataset.cdoc);return docsModal(cdc.dataset.cdoc,x?x.customer:"")}const ce=e.target.closest("[data-cedit]"),cd=e.target.closest("[data-cdel]");if(ce)editCust(ce.dataset.cedit);if(cd&&delCust(cd.dataset.cdel))custs()};
 }
 /* Price list (read only) */
 function svc(){
@@ -399,7 +405,7 @@ function enter(name){
   localStorage.setItem("esevaiPro.staff",name);
   $("#staffBtn").lastChild.textContent=" "+name;
   document.body.classList.remove("locked");
-  go();ic();cloudPull()
+  go();ic();cloudPull();syncDocs()
 }
 function initLogin(){
   const f=$("#lform"),err=$("#lerr");let creating=false;
@@ -443,7 +449,7 @@ function cloudPush(){clearTimeout(cloudTimer);cloudTimer=setTimeout(cloudFlush,8
 async function cloudFlush(){
   cloudTimer=null;
   if(cloudBusy){cloudPush();return}
-  cloudBusy=true;
+  cloudBusy=true;cloudState("busy");
   try{
     const h=await hdr();if(!h)throw new Error("noauth");
     const r=await fetch(SB_URL+"/rest/v1/app_data?on_conflict=id",{method:"POST",headers:{...h,Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({id:SB_ROW,data:db,updated_at:new Date().toISOString()})});
@@ -452,10 +458,10 @@ async function cloudFlush(){
   }catch(e){localStorage.setItem("esevaiPro.dirty","1");cloudState("off")}
   cloudBusy=false;
 }
-function cloudState(s){const t=$("#today");if(t)t.title=s==="ok"?"Cloud synced":"Offline - will sync later"}
+function cloudState(s){cloudState.s=s;if(typeof syncBadge==="function")syncBadge()}
 function normDb(){
   db.reminders=db.reminders||[];db.bills=db.bills||[];db.apps=db.apps||[];db.services=db.services||DEF().services;
-  db.tpl=db.tpl&&db.tpl.length?db.tpl:TPL();db.sent=db.sent||{};db.msgs=db.msgs||{};
+  db.tpl=db.tpl&&db.tpl.length?db.tpl:TPL();db.sent=db.sent||{};db.msgs=db.msgs||{};db.docs=db.docs||[];db.delq=db.delq||[];
   db.apps.forEach(a=>{a.docs=a.docs||[];a.log=a.log||[];a.upd=a.upd||a.ts;a.gov=a.gov||0;a.charge=a.charge||0})
 }
 async function cfgPull(h){
@@ -485,6 +491,307 @@ async function cloudPull(){
     cloudState("ok")
   }catch(e){cloudState("off")}
 }
-addEventListener("load",()=>setInterval(cloudPull,30000));
-addEventListener("online",()=>cloudPull());
+addEventListener("load",()=>setInterval(()=>{cloudPull();syncDocs()},30000));
+addEventListener("online",()=>{cloudPull();syncDocs();syncBadge()});addEventListener("offline",()=>syncBadge());
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)cloudPull()});
+
+/* ===== DOCUMENTS (compressed copy in Supabase Storage, offline queue in IndexedDB) ===== */
+const BUCKET="customer-docs",MAXIMG=10*1024*1024,MAXPDF=3*1024*1024,DT=["Aadhaar card","Ration / Smart card","Passport photo","Signature","Marksheet / TC","Driving licence","Income certificate","PAN card","Other"],ACCEPT="image/*,application/pdf";
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open("esevaiDocs",1);r.onupgradeneeded=()=>r.result.createObjectStore("q");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const qop=async(m,f)=>{const d=await idb();return new Promise((res,rej)=>{const t=d.transaction("q",m),r=f(t.objectStore("q"));t.oncomplete=()=>res(r.result);t.onerror=()=>rej(t.error)})};
+const qput=(k,v)=>qop("readwrite",s=>s.put(v,k)),qget=k=>qop("readonly",s=>s.get(k)),qdel=k=>qop("readwrite",s=>s.delete(k));
+
+async function compress(file,type){
+  if(file.type==="application/pdf"){if(file.size>MAXPDF)throw new Error("PDF must be under 3 MB.");return{blob:file,mime:"application/pdf",ext:"pdf"}}
+  if(!file.type.startsWith("image/"))throw new Error("Only photos and PDF files are allowed.");
+  if(file.size>MAXIMG)throw new Error("Photo is too big (max 10 MB).");
+  const img=await (window.createImageBitmap?createImageBitmap(file):Promise.reject()).catch(()=>new Promise((res,rej)=>{const i=new Image(),u=URL.createObjectURL(file);i.onload=()=>{URL.revokeObjectURL(u);res(i)};i.onerror=()=>rej(new Error("Could not read this photo. Try a JPG/PNG."));i.src=u}));
+  const pp=type==="Passport photo",long=pp?800:1600,short=pp?600:1600,q=pp?.85:.7;
+  const w0=img.width,h0=img.height,sc=Math.min(1,long/Math.max(w0,h0),short/Math.min(w0,h0)),w=Math.round(w0*sc),h=Math.round(h0*sc);
+  const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,w,h);x.drawImage(img,0,0,w,h);
+  const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",q));if(!blob)throw new Error("Could not compress this photo.");
+  return{blob,mime:"image/jpeg",ext:"jpg"}
+}
+async function prep(files,type){const out=[];for(const f of files){try{toast("Processing "+f.name+"…");out.push({type,...await compress(f,type)})}catch(e){toast(e.message||"Could not use this file")}}return out}
+
+async function addDoc({phone,appId,type,blob,mime,ext,last4}){
+  const id=uid()+uid(),path=phone+"/"+id+"."+ext;
+  await qput(id,blob);
+  db.docs.push({id,phone,appId:appId||"",apps:appId?[appId]:[],type,mime,size:blob.size,ts:Date.now(),by:staff(),path,pending:1,last4:last4||""});
+  save();syncBadge();syncDocs();return id
+}
+function dropDoc(d){db.docs=db.docs.filter(x=>x!==d);qdel(d.id).catch(()=>{});db.delq.push(d.path);save();syncDocs()}
+let dsb=false,dwarn=false;
+async function syncDocs(){
+  if(dsb||!navigator.onLine||!auth||!db.docs)return;
+  if(!db.docs.some(d=>d.pending)&&!db.delq.length)return;
+  dsb=true;syncBadge();
+  try{
+    const t=await token();if(!t)return;const H={apikey:SB_KEY,Authorization:"Bearer "+t};
+    for(const p of [...db.delq]){
+      const r=await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${p}`,{method:"DELETE",headers:H});
+      if(r.ok||r.status===404||r.status===400){db.delq=db.delq.filter(x=>x!==p);save()}else break}
+    for(const d of db.docs.filter(x=>x.pending)){
+      const b=await qget(d.id);if(!b){d.pending=0;d.lost=1;save();continue}
+      const r=await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${d.path}`,{method:"POST",headers:{...H,"Content-Type":d.mime,"x-upsert":"true"},body:b});
+      if(r.ok){d.pending=0;await qdel(d.id);save()}
+      else{if(r.status>=400&&r.status<500&&r.status!==401&&!dwarn){dwarn=true;toast("File upload failed ("+r.status+"). Run the storage SQL in Supabase.")}break}}
+  }catch{}finally{dsb=false;syncBadge()}
+}
+async function docUrl(d){
+  if(d.pending){const b=await qget(d.id);if(b)return URL.createObjectURL(b)}
+  if(!navigator.onLine)throw new Error("You are offline. This file opens when internet is back.");
+  const t=await token();if(!t)throw new Error("Please login again.");
+  const r=await fetch(`${SB_URL}/storage/v1/object/sign/${BUCKET}/${d.path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+t,"Content-Type":"application/json"},body:JSON.stringify({expiresIn:120})});
+  if(!r.ok)throw new Error("Could not open this file.");const j=await r.json();return SB_URL+"/storage/v1"+j.signedURL
+}
+async function viewDoc(id){
+  const d=db.docs.find(x=>x.id===id);if(!d)return;const w=window.open("","_blank");
+  try{const u=await docUrl(d);if(w)w.location=u;else window.open(u,"_blank")}catch(e){if(w)w.close();toast(e.message||"Could not open")}
+}
+const hasDoc=(stg,phone,n)=>stg.files.some(f=>f.type===n)||[...stg.reuse].some(id=>{const d=db.docs.find(x=>x.id===id);return d&&d.type===n});
+function attachDocs(a,stg){
+  stg.reuse.forEach(id=>{const d=db.docs.find(x=>x.id===id);if(d&&!(d.apps||[]).includes(a.id)){(d.apps=d.apps||[]).push(a.id);logA(a,"Attached saved document: "+d.type)}});
+  stg.files.forEach(f=>{logA(a,"Document added: "+f.type);addDoc({phone:a.phone,appId:a.id,...f})})
+}
+const dInfo=d=>`${dstr(d.ts)} · ${Math.max(1,Math.round(d.size/1024))} KB · ${esc(d.by||"")}`;
+
+/* optional upload area inside "New application" */
+function docZone(el,stg,getPhone,fill){
+  const render=()=>{
+    const ph=getPhone(),ex=ph.length===10?db.docs.filter(d=>d.phone===ph):[];
+    ex.forEach(d=>{if(!stg.seen.has(d.id)){stg.seen.add(d.id);stg.reuse.add(d.id)}});
+    el.innerHTML=`<b style="font-size:13px">Scanned documents <small style="color:var(--mut);font-weight:400">(optional)</small></b>
+    ${ex.length?`<div class="note" style="margin-top:8px">Already saved for this customer – untick to skip:<div class="ckl">${ex.map(d=>`<label class="ck"><input type="checkbox" data-re="${d.id}" ${stg.reuse.has(d.id)?"checked":""}> ${esc(d.type)} · ${dstr(d.ts)}</label>`).join("")}</div></div>`:""}
+    ${stg.files.map((f,i)=>`<div class="row"><span>${esc(f.type)} · ${Math.max(1,Math.round(f.blob.size/1024))} KB</span><button type="button" class="btn sm dng" data-zrm="${i}">Remove</button></div>`).join("")}
+    <div class="dzb"><select id="dzt">${DT.map(t=>`<option ${t===stg.type?"selected":""}>${esc(t)}</option>`).join("")}</select>
+    <button type="button" class="btn sm" id="dzu"><i data-lucide="upload"></i>Upload</button><button type="button" class="btn sm" id="dzc"><i data-lucide="camera"></i>Take photo</button><button type="button" class="btn sm" id="dzo"><i data-lucide="scan-text"></i>Scan ID / card</button></div>
+    <input type="file" id="dzf" hidden multiple accept="${ACCEPT}"><input type="file" id="dzg" hidden accept="image/*" capture="environment"><input type="file" id="dzs" hidden accept="image/*">`;ic()};
+  stg.render=render;
+  el.onchange=async e=>{const t=e.target;
+    if(t.id==="dzt"){stg.type=t.value;return}
+    if(t.dataset.re){t.checked?stg.reuse.add(t.dataset.re):stg.reuse.delete(t.dataset.re);return}
+    if(t.id==="dzf"||t.id==="dzg"){const l=await prep([...t.files],stg.type);stg.files.push(...l);render()}
+    if(t.id==="dzs"&&t.files[0]){
+      const l=await prep([t.files[0]],"Aadhaar card");if(!l.length)return;
+      try{toast("Reading document…");const o=await scanAadhaar(l[0].blob,t.files[0]);l[0].last4=o.last4||"";if(o.docType&&DT.includes(o.docType))l[0].type=o.docType;stg.files.push(l[0]);fill(o);
+        toast(o.msg||"Could not read clearly. Try a sharper, flatter photo.")}
+      catch(er){stg.files.push(l[0]);toast(er.message||"OCR failed; photo attached without auto-fill")}
+      render()}};
+  el.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.dataset.zrm){stg.files.splice(+b.dataset.zrm,1);render()}
+    if(b.id==="dzu")$("#dzf").click();if(b.id==="dzc")$("#dzg").click();if(b.id==="dzo")$("#dzs").click()};
+  render()
+}
+
+/* section inside an application's case file */
+function docSec(a){
+  const l=db.docs.filter(d=>d.phone===a.phone&&(d.appId===a.id||(d.apps||[]).includes(a.id)));
+  return `<div class="full"><b style="font-size:13px">Scanned documents</b><div class="chips" style="margin:8px 0 0">${l.map(d=>`<button type="button" class="chip" data-xvd="${d.id}">${esc(d.type)}${d.pending?" ⏳":""}</button>`).join("")||'<small style="color:var(--mut)">None attached</small>'}</div><button type="button" class="btn sm" id="adm" style="margin-top:8px"><i data-lucide="folder-open"></i>Manage customer documents</button></div>`
+}
+function docSecInit(a){
+  const F=$("#mform");F.onclick=e=>{const v=e.target.closest("[data-xvd]");if(v)viewDoc(v.dataset.xvd)};
+  $("#adm").onclick=()=>docsModal(a.phone,a.customer)
+}
+
+/* all documents of one customer */
+function docsModal(phone,name){
+  const F=$("#mform");let ty=DT[0];
+  const draw=()=>{const l=db.docs.filter(d=>d.phone===phone).sort((a,b)=>b.ts-a.ts);
+    F.innerHTML=`<h2>Documents</h2><p class="sub">${esc(name||"")} · ${esc(phone)}</p>
+    <div>${l.map(d=>`<div class="row"><div><b>${esc(d.type)}</b> ${d.pending?'<span class="tag t-wait">Waiting to upload</span>':d.lost?'<span class="tag t-due">File missing</span>':""}<br><small style="color:var(--mut)">${dInfo(d)}${d.last4?" · Aadhaar ••••"+esc(d.last4):""}${(d.apps||[]).length?" · "+d.apps.map(esc).join(", "):""}</small></div><div class="ta"><button type="button" class="btn sm" data-xvd="${d.id}">View</button><button type="button" class="btn sm dng" data-xdd="${d.id}">Delete</button></div></div>`).join("")||emp("folder-open","No documents yet","Upload or take a photo below.")}</div>
+    <div class="dzb"><select id="xty">${DT.map(t=>`<option ${t===ty?"selected":""}>${esc(t)}</option>`).join("")}</select><button type="button" class="btn sm pri" id="xup"><i data-lucide="upload"></i>Upload</button><button type="button" class="btn sm" id="xcm"><i data-lucide="camera"></i>Take photo</button></div>
+    <input type="file" id="xf" hidden multiple accept="${ACCEPT}"><input type="file" id="xg" hidden accept="image/*" capture="environment">
+    <p class="sub" style="margin:12px 0 0;font-size:12px">Stored as a compressed copy (photos max 1600 px, PDF max 3 MB). Private – staff login only.</p>
+    <div class="ma"><button type="button" class="btn" id="mc">Close</button></div>`;
+    $("#mc").onclick=closeM;ic()};
+  F.onsubmit=e=>e.preventDefault();
+  F.onchange=async e=>{const t=e.target;if(t.id==="xty"){ty=t.value;return}
+    if(t.id==="xf"||t.id==="xg"){const l=await prep([...t.files],ty);for(const f of l)await addDoc({phone,type:f.type,blob:f.blob,mime:f.mime,ext:f.ext});if(l.length)toast(l.length+" saved");draw()}};
+  F.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.dataset.xvd)viewDoc(b.dataset.xvd);
+    if(b.dataset.xdd){const d=db.docs.find(x=>x.id===b.dataset.xdd);if(d&&confirm("Delete "+d.type+"? This cannot be undone.")){dropDoc(d);draw()}}
+    if(b.id==="xup")$("#xf").click();if(b.id==="xcm")$("#xg").click()};
+  $("#modal").classList.add("open");draw()
+}
+
+/* ===== Aadhaar OCR (Tesseract.js, runs in the browser) ===== */
+let tsr=null;
+const loadTess=()=>tsr||(tsr=new Promise((res,rej)=>{if(window.Tesseract)return res(window.Tesseract);const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";s.onload=()=>res(window.Tesseract);s.onerror=()=>{tsr=null;rej(new Error("OCR needs internet the first time."))};document.head.appendChild(s)}));
+function parseAadhaar(text){
+  const L=text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),o={name:"",dob:"",gender:"",last4:""};
+  let di=-1;
+  L.forEach((s,i)=>{const m=s.match(/(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})/);if(m&&!o.dob){o.dob=`${m[3]}-${m[2]}-${m[1]}`;di=i}});
+  const g=text.match(/\b(female|male|transgender)\b/i);if(g)o.gender=g[1][0].toUpperCase()+g[1].slice(1).toLowerCase();
+  const n=text.match(/\b(\d{4})\s?(\d{4})\s?(\d{4})\b/);if(n)o.last4=n[3];
+  const bad=/government|india|aadhaar|aadhar|male|female|dob|birth|year|address|unique|authority|vid|help|www|uidai/i;
+  for(let i=(di>0?di-1:L.length-1);i>=0;i--){const c=L[i].replace(/[^A-Za-z .]/g,"").replace(/\s+/g," ").trim();
+    if(c.length>=3&&/[A-Za-z]{3}/.test(c)&&!bad.test(c)){o.name=c;break}}
+  return o
+}
+async function ocrAadhaar(blob){
+  const T=await loadTess();
+  const r=await T.recognize(blob,"eng",{logger:m=>{if(m.status==="recognizing text")toast("Reading… "+Math.round(m.progress*100)+"%")}});
+  return parseAadhaar(r.data.text)
+}
+
+/* ===== Aadhaar QR scan (fast, offline) - falls back to OCR ===== */
+let qrl=null;
+const loadQR=()=>qrl||(qrl=new Promise((res,rej)=>{if(window.jsQR)return res(window.jsQR);
+  const add=u=>new Promise((ok,no)=>{const s=document.createElement("script");s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+  add("jsQR.js").then(()=>res(window.jsQR)).catch(()=>add("https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js").then(()=>res(window.jsQR)).catch(()=>{qrl=null;rej(new Error("QR library missing"))}))}));
+async function qrRaw(file,quick){
+  let bmp;try{bmp=await createImageBitmap(file)}catch{return ""}
+  if("BarcodeDetector"in window){try{const r=await new BarcodeDetector({formats:["qr_code"]}).detect(bmp);if(r.length&&r[0].rawValue)return r[0].rawValue}catch{}}
+  let J;try{J=await loadQR()}catch{throw new Error("jsQR.js not loaded")}
+  const W=bmp.width,H=bmp.height,R=[[0,0,1,1],[.5,0,.5,1],[0,0,.5,1],[0,.5,1,.5],[0,0,1,.5],[.5,.5,.5,.5],[0,.5,.5,.5],[.5,0,.5,.5],[0,0,.5,.5],[.25,.25,.5,.5]];
+  for(const [rx,ry,rw,rh] of (quick?R.slice(0,3):R)){
+    const sx=Math.round(rx*W),sy=Math.round(ry*H),sw=Math.round(rw*W),sh=Math.round(rh*H);
+    for(const mx of (quick?[1600]:[1600,1000,2400])){
+      const k=Math.min(mx/Math.max(sw,sh),mx===2400?2:1.6),w=Math.max(50,Math.round(sw*k)),h=Math.max(50,Math.round(sh*k));
+      if(mx===2400&&k<=1.05)continue;
+      const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});x.imageSmoothingQuality="high";x.drawImage(bmp,sx,sy,sw,sh,0,0,w,h);
+      const q=J(x.getImageData(0,0,w,h).data,w,h,{inversionAttempts:"attemptBoth"});if(q&&q.data)return q.data}}
+  return ""}
+async function qrParse(txt){
+  txt=(txt||"").trim();const o={name:"",dob:"",gender:"",last4:"",via:"qr"};
+  const gm={M:"Male",F:"Female",T:"Transgender"},dd=v=>{const m=(v||"").match(/(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})/);return m?`${m[3]}-${m[2]}-${m[1]}`:""};
+  if(/^\d{50,}$/.test(txt)){ /* Secure QR: big decimal number -> bytes -> gzip -> fields split by 0xFF */
+    let h=BigInt(txt).toString(16);if(h.length%2)h="0"+h;
+    const b=new Uint8Array(h.match(/../g).map(x=>parseInt(x,16))),ds=new DecompressionStream("gzip"),w=ds.writable.getWriter();w.write(b);w.close();
+    const u=new Uint8Array(await new Response(ds.readable).arrayBuffer()),f=[];let st=0;
+    for(let i=0;i<u.length&&f.length<20;i++)if(u[i]===255){f.push(new TextDecoder("utf-8").decode(u.slice(st,i)));st=i+1}
+    const ri=f.findIndex(v=>/^\d{20,}$/.test(v));if(ri<0)return o;
+    o.last4=f[ri].slice(0,4);o.name=(f[ri+1]||"").trim();o.dob=dd(f[ri+2]);o.gender=gm[(f[ri+3]||"").trim().toUpperCase()]||"";
+    return o}
+  if(/<PrintLetterBarcodeData/i.test(txt)){ /* old XML QR - keep last 4 only */
+    const a=n=>(txt.match(new RegExp(n+'="([^"]*)"',"i"))||[])[1]||"";
+    o.name=a("name").trim();o.dob=dd(a("dob"))||(a("yob")?a("yob")+"-01-01":"");o.gender=gm[a("gender").toUpperCase()]||a("gender");o.last4=a("uid").slice(-4);return o}
+  return o}
+/* ===== Smart document scanner: QR -> image clean-up -> OCR -> rules + checksum validation (offline, no cloud AI) ===== */
+/*PURE-START*/
+const VD=[[0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],[3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],[6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],[9,8,7,6,5,4,3,2,1,0]],
+VP=[[0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],[8,9,1,6,0,4,3,5,2,7],[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],[2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]];
+const verhoeff=n=>{let c=0;String(n).split("").reverse().forEach((d,i)=>{c=VD[c][VP[i%8][+d]]});return c===0};
+const DGT={O:"0",o:"0",I:"1",l:"1","|":"1",S:"5",B:"8",Z:"2"},fixD=s=>s.replace(/[OoIl|SBZ]/g,c=>DGT[c]);
+const tcase=s=>s.toLowerCase().replace(/(^|[\s.])([a-z])/g,(m,a,b)=>a+b.toUpperCase());
+const BADN=/\b(?:government|india|aadhaar|aadhar|male|female|dob|birth|year|address|unique|authority|vid|help|www|uidai|licen[cs]e|driving|transport|union|signature|valid|validity|issue|class|blood|department|permanent|account|number|card|income|certificate|tahsildar|revenue|district|taluk|village|state|nadu|father|mother|husband|guardian|name|date|sex|gender|photo|authorised|signing|holder|mobile|phone|pincode|pin|enrolment|download|print)\b/i;
+const cleanN=s=>(s||"").replace(/[^A-Za-z .]/g," ").replace(/\s+/g," ").trim();
+const goodN=s=>{const w=s.split(" ").filter(Boolean);return s.length>=3&&s.length<=45&&w.length<=5&&w.some(x=>x.replace(/\./g,"").length>=2)&&!BADN.test(s)&&(s.match(/[A-Za-z]/g)||[]).length>=s.replace(/\s/g,"").length*.85};
+const NOWY=new Date().getFullYear();
+function pdate(d,m,y){d=+d;m=+m;y=+y;if(y<1900||y>NOWY||m<1||m>12||d<1||d>31)return"";const t=new Date(y,m-1,d);if(t.getMonth()!==m-1)return"";return`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`}
+function dlist(s){const q=(s||"").replace(/(?<=\d)[Oo]|[Oo](?=\d)/g,"0"),re=/(?<!\d)(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{4})(?!\d)/g,r=[];let m;while((m=re.exec(q))){const d=pdate(m[1],m[2],m[3]);if(d)r.push(d)}return r}
+function parseDoc(text){
+  const T=String(text||"").replace(/\r/g,"").replace(/[ \t]+/g," "),L=T.split("\n").map(s=>s.trim()).filter(Boolean),U=T.toUpperCase();
+  const o={docType:"",name:"",dob:"",yob:"",gender:"",phone:"",last4:"",l4ok:false,idno:"",guardian:"",addr:""};
+  /* Aadhaar number: 12 digits, validated with Verhoeff checksum */
+  const ac=[],re=/(?<!\d[ \t.-]?)(?<![A-Za-z])([\dOoIl|SBZ]{4})[ \t.-]?([\dOoIl|SBZ]{4})[ \t.-]?([\dOoIl|SBZ]{4})(?![ \t.-]?\d)(?![A-Za-z])/g;let m;
+  while((m=re.exec(T))){const raw=m[0];if((raw.match(/\d/g)||[]).length<8)continue;const n=fixD(m[1]+m[2]+m[3]);if(!/^\d{12}$/.test(n)||/^[01]/.test(n))continue;
+    const a=T.lastIndexOf("\n",m.index)+1,b=T.indexOf("\n",m.index),ln=T.slice(a,b<0?T.length:b);if(/vid/i.test(ln))continue;ac.push({n,ok:verhoeff(n),s:m.index,e:m.index+raw.length})}
+  const best=ac.find(a=>a.ok)||ac[0];if(best){o.last4=best.n.slice(-4);o.l4ok=best.ok}
+  let T2=T;[...ac].sort((a,b)=>b.s-a.s).forEach(a=>{T2=T2.slice(0,a.s)+" ".repeat(a.e-a.s)+T2.slice(a.e)});
+  /* document type by keyword score */
+  const sc={},add=(k,r,w)=>{if(r.test(T))sc[k]=(sc[k]||0)+w};
+  const DLRE=/\b([A-Z]{2})[ -]?(\d{2})[ -]?((?:19|20)\d{2})[ -]?(\d{7})\b/,PANRE=/\b[A-Z]{5}\d{4}[A-Z]\b/;
+  add("Aadhaar card",/aadhaar|aadhar|uidai|unique identification|ஆதார்|आधार/i,3);if(ac.some(a=>a.ok))sc["Aadhaar card"]=(sc["Aadhaar card"]||0)+3;add("Aadhaar card",/year of birth|your aadhaar no/i,1);
+  add("Driving licence",/driving\s*licen[cs]e|licen[cs]e\s*no|\bd\.?l\.?\s*no|transport|form\s*7\b|\bcov\b|ஓட்டுந|ஓட்டுன/i,2);if(DLRE.test(U))sc["Driving licence"]=(sc["Driving licence"]||0)+3;
+  add("PAN card",/permanent account number|income tax dep/i,3);if(PANRE.test(U))sc["PAN card"]=(sc["PAN card"]||0)+3;
+  add("Income certificate",/income\s*certificate|annual income|வருமான|tah?sildar|தாசில்தார்/i,4);
+  add("Ration / Smart card",/ration|smart card|குடும்ப அட்டை|civil supplies|family card|பொது விநியோக/i,3);
+  add("Marksheet / TC",/mark\s*sheet|statement of marks|register\s*(?:no|number)|sslc|\bhsc\b|transfer certificate|board of/i,3);
+  const top=Object.entries(sc).sort((a,b)=>b[1]-a[1])[0];if(top&&top[1]>=3)o.docType=top[0];
+  if(o.docType!=="Aadhaar card"&&!o.l4ok)o.last4="";
+  /* DOB */
+  let di=-1;
+  for(let i=0;i<L.length&&!o.dob;i++)if(/\b(?:dob|d\.o\.b|date of birth|birth date)\b|பிறந்த|जन्म/i.test(L[i])){const c=dlist(L[i]),n=dlist(L[i+1]||""),v=c[0]||n[0];if(v){o.dob=v;di=c[0]?i:i+1}}
+  if(!o.dob&&/Aadhaar|licence/.test(o.docType)){const all=dlist(T).sort();if(all.length&&+all[0].slice(0,4)<=NOWY-5)o.dob=all[0]}
+  const ym=T.match(/(?:year of birth|yob|பிறந்த ஆண்டு)\s*[:\-]?\s*((?:19|20)\d{2})/i);let yi=-1;if(ym&&!o.dob){o.yob=ym[1];yi=L.findIndex(s=>/year of birth|yob|பிறந்த ஆண்டு/i.test(s))}
+  /* gender */
+  const g=T.match(/\b(female|male|transgender)\b/i)||T.match(/(?:sex|gender)\s*[:\-]?\s*([MF])\b/i);
+  if(g){const v=g[1].toLowerCase();o.gender=v==="f"?"Female":v==="m"?"Male":v[0].toUpperCase()+v.slice(1)}else if(/பெண்/.test(T))o.gender="Female";else if(/ஆண்/.test(T))o.gender="Male";
+  /* name: label first, then the line above DOB (Aadhaar) */
+  const lab=/^(?:name of (?:the )?(?:applicant|card ?holder|candidate|head(?: of (?:the )?family)?|assessee)|holder'?s? name|name|பெயர்)(?![A-Za-z])[\s:.\-–]*(.*)$/i;
+  for(let i=0;i<L.length&&!o.name;i++){const mm=lab.exec(L[i]);if(!mm||/father|husband|mother|guardian|spouse/i.test(L[i]))continue;
+    let c=cleanN(mm[1]);if(goodN(c)){o.name=tcase(c);break}c=cleanN(L[i+1]);if(goodN(c)){o.name=tcase(c);break}}
+  if(!o.name){const at=di>=0?di:yi;if(at>0)for(let i=at-1;i>=0&&i>=at-4;i--){const c=cleanN(L[i]);if(goodN(c)){o.name=tcase(c);break}}}
+  /* parent / guardian */
+  const gm=T.match(/(?:S\s*\/\s*D\s*\/\s*W|S\s*\/\s*O|D\s*\/\s*O|W\s*\/\s*O|C\s*\/\s*O|son of|daughter of|wife of|father'?s? name|husband'?s? name|guardian'?s? name)\s*(?:of)?[\s:.\-,]*([A-Za-z][A-Za-z .]{2,40})/i);
+  if(gm){const c=cleanN(gm[1]);if(goodN(c)&&c.toLowerCase()!==o.name.toLowerCase())o.guardian=tcase(c)}
+  /* ID numbers */
+  const dm=DLRE.exec(U);if(dm&&o.docType==="Driving licence")o.idno=`${dm[1]}${dm[2]} ${dm[3]}${dm[4]}`;
+  const pm=PANRE.exec(U);if(pm&&o.docType==="PAN card")o.idno=pm[0];
+  if(o.docType==="Income certificate"||o.docType==="Ration / Smart card"){const cm=T.match(/(?:certificate|cert\.?|ref\.?|serial|card)\s*(?:no|number|#)\.?[\s:.\-]*([A-Z0-9][A-Z0-9\/\-]{4,24})/i);if(cm&&/\d/.test(cm[1]))o.idno=cm[1].toUpperCase()}
+  /* phone: labelled first; unlabelled only on documents that normally carry one */
+  const pl=T2.match(/(?:mobile|mob|phone|ph|cell|contact|தொலைபேசி|கைபேசி)[^\d\n]{0,14}((?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5})/i);
+  if(pl)o.phone=pl[1].replace(/\D/g,"").slice(-10);
+  else if(!/Aadhaar|licence|PAN|Ration/.test(o.docType)){const pu=T2.match(/(?<!\d)(?:\+?91[\s-]?)?([6-9]\d{9})(?!\d)/);if(pu)o.phone=pu[1]}
+  /* address */
+  const ai=L.findIndex(s=>/^(?:permanent address|present address|address|முகவரி)(?![A-Za-z])/i.test(s));
+  if(ai>=0){const parts=[L[ai].replace(/^[^:]*:?/,"")];for(let i=ai+1;i<L.length&&i<=ai+2;i++){if(/^(?:dob|vid|mobile|\d{4}\s?\d{4})/i.test(L[i]))break;parts.push(L[i])}
+    const a=parts.join(", ").replace(/[^A-Za-z0-9 ,.\/\-#]/g," ").replace(/\s+/g," ").replace(/\s*,(\s*,)+/g,",").replace(/^[ ,]+|[ ,]+$/g,"");if(a.length>=8)o.addr=a.slice(0,150)}
+  return o}
+function mergeDoc(a,b){for(const k of Object.keys(b)){if(k==="l4ok")continue;if(k==="last4"){if(!a.l4ok&&(b.l4ok||!a.last4)){a.last4=b.last4;a.l4ok=b.l4ok}continue}if(!a[k]&&b[k])a[k]=b[k]}return a}
+function docMsg(o){const f=[["name","name"],["dob","DOB"],["yob","year of birth"],["gender","gender"],["phone","phone"],["last4","Aadhaar no."],["idno","ID no."],["guardian","parent name"]].filter(([k])=>o[k]).map(x=>x[1]);
+  return f.length?`${o.docType||"Document"} read: ${f.join(", ")} filled – please check${o.last4&&!o.l4ok?" (Aadhaar digits unsure)":""}`:""}
+/*PURE-END*/
+async function cleanImgs(blob){
+  const bmp=await createImageBitmap(blob),k=Math.min(2.5,2400/Math.max(bmp.width,bmp.height)),w=Math.round(bmp.width*k),h=Math.round(bmp.height*k);
+  const mk=()=>{const c=document.createElement("canvas");c.width=w;c.height=h;return c},A=mk(),xa=A.getContext("2d",{willReadFrequently:true});
+  xa.imageSmoothingQuality="high";xa.drawImage(bmp,0,0,w,h);
+  const im=xa.getImageData(0,0,w,h),d=im.data,g=new Uint8Array(w*h),hist=new Uint32Array(256),tot=w*h;
+  for(let i=0,p=0;i<d.length;i+=4,p++){const v=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)|0;g[p]=v;hist[v]++}
+  let lo=0,hi=255,acc=0;while(lo<254&&(acc+=hist[lo])<tot*.01)lo++;acc=0;while(hi>lo+1&&(acc+=hist[hi])<tot*.01)hi--;
+  const sp=Math.max(1,hi-lo);
+  for(let p=0;p<tot;p++){let v=Math.round((g[p]-lo)*255/sp);v=v<0?0:v>255?255:v;g[p]=v;const i=p*4;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}
+  xa.putImageData(im,0,0);
+  const B=mk(),xb=B.getContext("2d"),I=new Float64Array((w+1)*(h+1));
+  for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=g[y*w+x];I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+row}}
+  const r=Math.max(10,Math.round(w/30)),ib=xb.createImageData(w,h),o=ib.data;
+  for(let y=0;y<h;y++){const y0=Math.max(0,y-r),y1=Math.min(h,y+r+1);for(let x=0;x<w;x++){const x0=Math.max(0,x-r),x1=Math.min(w,x+r+1),s=I[y1*(w+1)+x1]-I[y0*(w+1)+x1]-I[y1*(w+1)+x0]+I[y0*(w+1)+x0],mean=s/((x1-x0)*(y1-y0)),v=g[y*w+x]<mean*.88?0:255,i=(y*w+x)*4;o[i]=o[i+1]=o[i+2]=v;o[i+3]=255}}
+  xb.putImageData(ib,0,0);return{A,B}}
+const tw={},twm={msg:"Reading"};
+async function tessW(lang){const T=await loadTess();return tw[lang]||(tw[lang]=await T.createWorker(lang,1,{logger:m=>{if(m.status==="recognizing text")toast(twm.msg+"… "+Math.round(m.progress*100)+"%")}}))}
+async function ocrText(cv,lang,psm){const w=await tessW(lang);await w.setParameters({tessedit_pageseg_mode:String(psm),preserve_interword_spaces:"1"});return(await w.recognize(cv)).data.text}
+async function smartOcr(blob){
+  const{A,B}=await cleanImgs(blob);
+  twm.msg="Reading 1/3";let o=parseDoc(await ocrText(A,"eng",3));
+  const done=x=>x.name&&(x.dob||x.yob||!/Aadhaar|licence/.test(x.docType))&&(x.docType!=="Aadhaar card"||x.l4ok);
+  if(!done(o)){twm.msg="Reading 2/3";o=mergeDoc(o,parseDoc(await ocrText(B,"eng",11)))}
+  if(!o.name){twm.msg="Reading 3/3 (Tamil – first time downloads language)";try{o=mergeDoc(o,parseDoc(await ocrText(A,"eng+tam",3)))}catch(e){console.warn("Tamil pass:",e)}}
+  o.via="ocr";o.msg=docMsg(o);return o}
+async function scanAadhaar(blob,orig){
+  try{const raw=await qrRaw(orig||blob,true);if(raw){const o=await qrParse(raw);if(o.name){o.docType="Aadhaar card";o.msg="Aadhaar QR read: name, DOB, gender, Aadhaar no. filled – please check";return o}}}catch(e){console.warn("QR:",e)}
+  toast("Reading text on the card…");
+  return smartOcr(orig||blob)}
+
+/* ===== sync badge + global search ===== */
+function syncBadge(){
+  const b=$("#syncb");if(!b)return;
+  const pend=(db.docs||[]).filter(d=>d.pending).length+(db.delq||[]).length,dirty=!!localStorage.getItem("esevaiPro.dirty");let c="",t="All synced";
+  if(!navigator.onLine){c="off";t="Offline"+(pend||dirty?" · saved on device":"")}
+  else if(cloudState.s==="busy"||dsb){c="busy";t="Syncing…"}
+  else if(dirty||pend){c="wait";t=pend?pend+" file(s) waiting":"Waiting to sync"}
+  b.className="syncb "+c;b.textContent=t
+}
+const jump=(p,sel,v)=>{closeM();const f=()=>{const i=$(sel);if(i){i.value=v;i.dispatchEvent(new Event("input"))}};if(location.hash==="#"+p){go();f()}else{location.hash=p;setTimeout(f,80)}};
+function gsearch(){
+  const F=$("#mform");
+  F.innerHTML=`<h2>Search</h2><p class="sub">Name, mobile, application no., bill no. or portal ack no.</p><input id="gq" placeholder="Type at least 2 letters…" autocomplete="off"><div id="gr" style="margin-top:12px"></div><div class="ma"><button type="button" class="btn" id="mc">Close</button></div>`;
+  F.onsubmit=e=>e.preventDefault();F.onchange=null;$("#modal").classList.add("open");$("#mc").onclick=closeM;const q=$("#gq");q.focus();
+  const sec=(t,rows)=>rows.length?`<b style="font-size:13px">${t}</b>${rows.join("")}`:"";
+  q.oninput=()=>{const s=q.value.trim().toLowerCase();if(s.length<2){$("#gr").innerHTML="";return}
+    const as=db.apps.filter(a=>(a.id+a.customer+a.phone+a.service+(a.ack||"")).toLowerCase().includes(s)).slice(0,8),
+      bs=db.bills.filter(b=>(b.id+(b.customer||"")+(b.phone||"")).toLowerCase().includes(s)).slice(0,8),cm={};
+    [...db.apps,...db.bills].forEach(x=>{if(x.customer&&(x.customer+(x.phone||"")).toLowerCase().includes(s))cm[x.phone||x.customer]=x});
+    const cs=Object.values(cm).slice(0,6),r=(at,id,t,sub)=>`<div class="row"><div><b>${esc(t)}</b><br><small style="color:var(--mut)">${esc(sub)}</small></div><button type="button" class="btn sm" ${at}="${esc(id)}">Open</button></div>`;
+    $("#gr").innerHTML=sec("Customers",cs.map(c=>r("data-gc",c.phone||c.customer,c.customer,c.phone||"no phone")))+sec("Applications",as.map(a=>r("data-ga",a.id,a.id+" · "+a.customer,a.service+" · "+a.status)))+sec("Bills",bs.map(b=>r("data-gb",b.id,b.id+" · "+(b.customer||"Walk-in"),money(b.total)+" · "+(due(b)>0?"Due "+money(due(b)):"Paid"))))||emp("search-x","Nothing found","Try a different name or number.");ic()};
+  F.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.dataset.ga)openApp(b.dataset.ga);if(b.dataset.gb)jump("bills","#bs",b.dataset.gb);if(b.dataset.gc)jump("customers","#cs",b.dataset.gc)}
+}
+document.addEventListener("DOMContentLoaded",()=>{
+  const r=document.querySelector(".top-r");if(!r)return;
+  const s=document.createElement("span");s.id="syncb";s.className="syncb";s.textContent="All synced";
+  const b=document.createElement("button");b.className="btn sm";b.id="gsb";b.innerHTML='<i data-lucide="search"></i>Search';b.onclick=gsearch;
+  r.prepend(s);r.prepend(b);ic();syncBadge();
+  document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"&&!document.body.classList.contains("locked")){e.preventDefault();gsearch()}})
+});

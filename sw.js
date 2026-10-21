@@ -1,6 +1,5 @@
-const CACHE = "allfa-esevai-v4";
-const SHELL = ["./","store.html","store.css","store.js","manifest.json","icon-192.png","icon-512.png","allfa-logo-purple.png","favicon.png",
-  "admin.html","admin.css","admin.js","admin-manifest.json","admin-icon-192.png","admin-icon-512.png","allfa-logo.png","admin-favicon.png"];
+const CACHE = "allfa-store-v6";
+const SHELL = ["./","index.html","store.css","store.js","jsQR.js","manifest.json","icon-192.png","icon-512.png","allfa-logo-purple.png","favicon.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(
@@ -13,7 +12,7 @@ self.addEventListener("install", e => {
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && (k.startsWith("allfa-store-") || k.startsWith("allfa-esevai-"))).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
