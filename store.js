@@ -404,9 +404,9 @@ function enter(name){
 function initLogin(){
   const f=$("#lform"),err=$("#lerr");let creating=false;
   f.querySelector(".lrow").insertAdjacentHTML("afterend",'<p style="text-align:center;margin:10px 0 0"><button type="button" class="lforgot" id="lnew"></button></p>');
-  const mode=()=>{$("#lgot").textContent=creating?"Create & Login":"Login";$("#lnew").textContent=creating?"Already have a login? Sign in":"New staff? Create login";$("#lhint").textContent=creating?"Choose a username and password (min 6 characters). It works on all devices.":"";$("#lp").autocomplete=creating?"new-password":"current-password";err.textContent=""};
+  const mode=()=>{$("#lgot").textContent=creating?"Create & Login":"Login";$("#lnew").textContent=creating?"Already have a login? Sign in":"New staff? Create login";$("#lhint").textContent=creating?"Use your email and a password (min 6 characters). It works on all devices.":"";$("#lp").autocomplete=creating?"new-password":"current-password";err.textContent=""};
   const bad=m=>{err.textContent=m;f.classList.remove("shake");void f.offsetWidth;f.classList.add("shake")};
-  mode();
+  $("#lu").placeholder="Email";$("#lu").type="email";mode();
   $("#lnew").onclick=()=>{creating=!creating;mode()};
   $("#leye").onclick=()=>{const p=$("#lp"),s=p.type==="password";p.type=s?"text":"password";$("#leye").innerHTML='<i data-lucide="'+(s?"eye-off":"eye")+'"></i>';ic()};
   $("#lforgot").onclick=()=>alert("Password maatha: Supabase Dashboard > Authentication > Users la andha user ku password reset pannalaam. Illana puthu staff login create pannunga.");
@@ -415,16 +415,16 @@ function initLogin(){
     e.preventDefault();err.textContent="";
     const name=$("#lu").value.trim(),pw=$("#lp").value,key=name.toLowerCase(),btn=f.querySelector(".lbtn");
     if(!name||!pw)return bad("Enter username and password.");
-    if(!/^[a-z0-9._-]{2,30}$/.test(key))return bad("Username: letters, numbers, . _ - only (no spaces).");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key))return bad("Enter a valid email address as your login (example: name@gmail.com).");
     if(creating&&pw.length<6)return bad("Password must be at least 6 characters.");
-    const email=key+DOM;btn.disabled=true;
+    const email=key;btn.disabled=true;
     try{
-      let r=creating?await sbAuth("signup",{email,password:pw,data:{name}}):await sbAuth("token?grant_type=password",{email,password:pw});
+      let r=creating?await sbAuth("signup",{email,password:pw,data:{name:name.split("@")[0]}}):await sbAuth("token?grant_type=password",{email,password:pw});
       let j=await r.json();
       if(creating&&r.ok&&!j.access_token){r=await sbAuth("token?grant_type=password",{email,password:pw});j=await r.json();
         if(!j.access_token)return bad("Account created but Supabase needs email confirmation. Turn OFF 'Confirm email' in Authentication settings.")}
       if(!r.ok||!j.access_token)return bad(creating?(/already/i.test(j.msg||j.message||"")?"This username is taken. Try another.":(j.msg||j.error_description||"Could not create login.")):"Wrong username or password.");
-      const nm=(j.user&&j.user.user_metadata&&j.user.user_metadata.name)||name,rem=$("#lr").checked;
+      const nm=(j.user&&j.user.user_metadata&&j.user.user_metadata.name)||name.split("@")[0],rem=$("#lr").checked;
       setSession(j,nm,rem);
       const us=getUsers();us[key]={name:nm,h:hh(pw)};localStorage.setItem(UK,JSON.stringify(us));
       (rem?localStorage:sessionStorage).setItem(SK,nm);
