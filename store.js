@@ -240,13 +240,25 @@ function newApp(){
     if(confirm("Print acknowledgment slip for the customer?"))ackSlip(a);
   });
   const F=$("#mform"),q=s=>F.querySelector(s);
-  const dl=()=>{const t=tp(q("[name=service]").value);q("#dl").innerHTML=`${t?`<b style="font-size:13px">Documents received</b><div class="ckl">${t.docs.map((x,i)=>`<label class="ck"><input type="checkbox" name="c${i}"> ${esc(x)}</label>`).join("")}</div>`:`<small style="color:var(--mut)">Other service – list the documents in Notes.</small>`}<div class="ckl"><label class="ck"><input type="checkbox" name="held"> <b>Original documents taken &amp; held at shop</b></label></div>`};
+  const sv=n=>{const ph=q("[name=phone]").value.trim();return ph.length===10?db.docs.filter(d=>d.phone===ph&&d.type===n&&!d.lost).sort((a,b)=>b.ts-a.ts)[0]:null};
+  const rowUI=(x,i)=>{const f=stg.files.find(f=>f.row===x),sd=f?null:sv(x);return f?`<small title="${esc(x)}">✓ ${f.mime==="application/pdf"?"PDF":"Photo"} · ${Math.max(1,Math.round(f.blob.size/1024))} KB</small><button type="button" class="btn sm ib dng" data-rx="${i}" title="Remove file"><i data-lucide="x"></i></button>`:sd?`<small title="Saved earlier for this customer">♻ Saved · ${dstr(sd.ts)}</small><button type="button" class="btn sm ib" data-rv="${sd.id}" title="View saved file"><i data-lucide="eye"></i></button><button type="button" class="btn sm ib" data-ru="${i}" title="Replace with a new file"><i data-lucide="paperclip"></i></button>`:`<button type="button" class="btn sm" data-ru="${i}" title="Upload photo / PDF (optional)"><i data-lucide="paperclip"></i>Upload</button>`};
+  const dl=()=>{const t=tp(q("[name=service]").value);stg.files.forEach(f=>{if(f.row&&!(t&&t.docs.includes(f.row)))delete f.row});stg.render&&stg.render();q("#dl").innerHTML=`${t?`<b style="font-size:13px">Documents received</b><div class="ckl">${t.docs.map((x,i)=>`<div class="ckr"><label class="ck"><input type="checkbox" name="c${i}"> ${esc(x)}</label><span class="rup" data-ri="${i}">${rowUI(x,i)}</span><input type="file" hidden accept="${ACCEPT}" data-rf="${i}"></div>`).join("")}</div>`:`<small style="color:var(--mut)">Other service – list the documents in Notes.</small>`}<div class="ckl"><label class="ck"><input type="checkbox" name="held"> <b>Original documents taken &amp; held at shop</b></label></div>`;(t?t.docs:[]).forEach((n,i)=>{if(sv(n)){const cb=q("[name=c"+i+"]");if(cb)cb.checked=true}});ic()};
   dl();
+  const dlz=q("#dl"),rdocs=()=>(tp(q("[name=service]").value)||{docs:[]}).docs,setRow=i=>{const el=dlz.querySelector(`[data-ri="${i}"]`);if(el){el.innerHTML=rowUI(rdocs()[i],i);ic()}};
+  const refreshRows=()=>rdocs().forEach((n,i)=>{setRow(i);const cb=q("[name=c"+i+"]");if(cb&&(sv(n)||stg.files.some(f=>f.row===n)))cb.checked=true});
+  dlz.onclick=e=>{const b=e.target.closest("button");if(!b)return;
+    if(b.dataset.rv)viewDoc(b.dataset.rv);
+    if(b.dataset.ru!==undefined){const f=dlz.querySelector(`[data-rf="${b.dataset.ru}"]`);if(f)f.click()}
+    if(b.dataset.rx!==undefined){const i=+b.dataset.rx,n=rdocs()[i];stg.files=stg.files.filter(f=>f.row!==n);const o=sv(n);if(o)stg.reuse.add(o.id);setRow(i);stg.render&&stg.render()}};
+  dlz.onchange=async e=>{const t=e.target;if(t.dataset.rf===undefined)return;const i=+t.dataset.rf,n=rdocs()[i];if(!n||!t.files[0])return;
+    const l=await prep([t.files[0]],n);t.value="";if(!l.length)return;
+    const o=sv(n);if(o)stg.reuse.delete(o.id);stg.files=stg.files.filter(f=>f.row!==n);l[0].row=n;stg.files.push(l[0]);
+    const cb=q(`[name=c${i}]`);if(cb)cb.checked=true;setRow(i);stg.render&&stg.render()};
   docZone(q("#dz"),stg,()=>q("[name=phone]").value.trim(),o=>{const n=q("[name=customer]"),nt=q("[name=notes]"),ph=q("[name=phone]");if(o.name&&!n.value)n.value=o.name;
     if(o.phone&&ph&&!ph.value.trim()){ph.value=o.phone;ph.dispatchEvent(new Event("input",{bubbles:true}))}
     if(!nt.value)nt.value=[o.docType,o.dob&&"DOB "+o.dob.split("-").reverse().join("-"),o.yob&&!o.dob&&"YOB "+o.yob,o.gender,o.last4&&"Aadhaar ••••"+o.last4,o.idno&&"ID "+o.idno,o.guardian&&"S/D/W of "+o.guardian,o.addr].filter(Boolean).join(" · ")});
   q("[name=service]").onchange=e=>{const t=tp(e.target.value);if(t){q("[name=charge]").value=chg(t.name,t);q("[name=gov]").value=t.gov;q("[name=due]").value=addD(today(),t.days);q("[name=renew]").value=rl(t.renew)}dl()};
-  q("[name=phone]").oninput=e=>{stg.render&&stg.render();const p=e.target.value,h=q("#hist");h.innerHTML="";if(p.length!==10)return;
+  q("[name=phone]").oninput=e=>{stg.render&&stg.render();refreshRows();const p=e.target.value,h=q("#hist");h.innerHTML="";if(p.length!==10)return;
     const as=db.apps.filter(a=>a.phone===p),bs=db.bills.filter(x=>x.phone===p),c=(as[0]||bs[0]||{}).customer,bal=sum(bs,due);
     if(c&&!q("[name=customer]").value)q("[name=customer]").value=c;
     if(c)h.innerHTML=`<div class="note"><b>Returning customer</b> · ${as.length} application${as.length===1?"":"s"}${as[0]?` · last: ${esc(as[0].service)} (${as[0].status})`:""}${bal>0?` · <b style="color:var(--red)">balance ${money(bal)}</b>`:""}</div>`};
@@ -496,13 +508,13 @@ addEventListener("online",()=>{cloudPull();syncDocs();syncBadge()});addEventList
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)cloudPull()});
 
 /* ===== DOCUMENTS (compressed copy in Supabase Storage, offline queue in IndexedDB) ===== */
-const BUCKET="customer-docs",MAXIMG=10*1024*1024,MAXPDF=3*1024*1024,DT=["Aadhaar card","Ration / Smart card","Passport photo","Signature","Marksheet / TC","Driving licence","Income certificate","PAN card","Other"],ACCEPT="image/*,application/pdf";
+const BUCKET="customer-docs",MAXIMG=10*1024*1024,MAXPDF=10*1024*1024,DT=["Aadhaar card","Ration / Smart card","Passport photo","Signature","Marksheet / TC","Driving licence","Income certificate","PAN card","Other"],ACCEPT="image/*,application/pdf";
 const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open("esevaiDocs",1);r.onupgradeneeded=()=>r.result.createObjectStore("q");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const qop=async(m,f)=>{const d=await idb();return new Promise((res,rej)=>{const t=d.transaction("q",m),r=f(t.objectStore("q"));t.oncomplete=()=>res(r.result);t.onerror=()=>rej(t.error)})};
 const qput=(k,v)=>qop("readwrite",s=>s.put(v,k)),qget=k=>qop("readonly",s=>s.get(k)),qdel=k=>qop("readwrite",s=>s.delete(k));
 
 async function compress(file,type){
-  if(file.type==="application/pdf"){if(file.size>MAXPDF)throw new Error("PDF must be under 3 MB.");return{blob:file,mime:"application/pdf",ext:"pdf"}}
+  if(file.type==="application/pdf"){if(file.size>MAXPDF)throw new Error("PDF must be under 10 MB.");return{blob:file,mime:"application/pdf",ext:"pdf"}}
   if(!file.type.startsWith("image/"))throw new Error("Only photos and PDF files are allowed.");
   if(file.size>MAXIMG)throw new Error("Photo is too big (max 10 MB).");
   const img=await (window.createImageBitmap?createImageBitmap(file):Promise.reject()).catch(()=>new Promise((res,rej)=>{const i=new Image(),u=URL.createObjectURL(file);i.onload=()=>{URL.revokeObjectURL(u);res(i)};i.onerror=()=>rej(new Error("Could not read this photo. Try a JPG/PNG."));i.src=u}));
@@ -563,9 +575,9 @@ function docZone(el,stg,getPhone,fill){
     ex.forEach(d=>{if(!stg.seen.has(d.id)){stg.seen.add(d.id);stg.reuse.add(d.id)}});
     el.innerHTML=`<b style="font-size:13px">Scanned documents <small style="color:var(--mut);font-weight:400">(optional)</small></b>
     ${ex.length?`<div class="note" style="margin-top:8px">Already saved for this customer – untick to skip:<div class="ckl">${ex.map(d=>`<label class="ck"><input type="checkbox" data-re="${d.id}" ${stg.reuse.has(d.id)?"checked":""}> ${esc(d.type)} · ${dstr(d.ts)}</label>`).join("")}</div></div>`:""}
-    ${stg.files.map((f,i)=>`<div class="row"><span>${esc(f.type)} · ${Math.max(1,Math.round(f.blob.size/1024))} KB</span><button type="button" class="btn sm dng" data-zrm="${i}">Remove</button></div>`).join("")}
+    ${stg.files.map((f,i)=>f.row?"":`<div class="row"><span>${esc(f.type)} · ${Math.max(1,Math.round(f.blob.size/1024))} KB</span><button type="button" class="btn sm dng" data-zrm="${i}">Remove</button></div>`).join("")}
     <div class="dzb"><select id="dzt">${DT.map(t=>`<option ${t===stg.type?"selected":""}>${esc(t)}</option>`).join("")}</select>
-    <button type="button" class="btn sm" id="dzu"><i data-lucide="upload"></i>Upload</button><button type="button" class="btn sm" id="dzc"><i data-lucide="camera"></i>Take photo</button><button type="button" class="btn sm" id="dzo"><i data-lucide="scan-text"></i>Scan ID / card</button></div>
+    <button type="button" class="btn sm" id="dzo"><i data-lucide="scan-text"></i>Scan ID / card</button></div>
     <input type="file" id="dzf" hidden multiple accept="${ACCEPT}"><input type="file" id="dzg" hidden accept="image/*" capture="environment"><input type="file" id="dzs" hidden accept="image/*">`;ic()};
   stg.render=render;
   el.onchange=async e=>{const t=e.target;
@@ -600,9 +612,9 @@ function docsModal(phone,name){
   const draw=()=>{const l=db.docs.filter(d=>d.phone===phone).sort((a,b)=>b.ts-a.ts);
     F.innerHTML=`<h2>Documents</h2><p class="sub">${esc(name||"")} · ${esc(phone)}</p>
     <div>${l.map(d=>`<div class="row"><div><b>${esc(d.type)}</b> ${d.pending?'<span class="tag t-wait">Waiting to upload</span>':d.lost?'<span class="tag t-due">File missing</span>':""}<br><small style="color:var(--mut)">${dInfo(d)}${d.last4?" · Aadhaar ••••"+esc(d.last4):""}${(d.apps||[]).length?" · "+d.apps.map(esc).join(", "):""}</small></div><div class="ta"><button type="button" class="btn sm" data-xvd="${d.id}">View</button><button type="button" class="btn sm dng" data-xdd="${d.id}">Delete</button></div></div>`).join("")||emp("folder-open","No documents yet","Upload or take a photo below.")}</div>
-    <div class="dzb"><select id="xty">${DT.map(t=>`<option ${t===ty?"selected":""}>${esc(t)}</option>`).join("")}</select><button type="button" class="btn sm pri" id="xup"><i data-lucide="upload"></i>Upload</button><button type="button" class="btn sm" id="xcm"><i data-lucide="camera"></i>Take photo</button></div>
+    <div class="dzb"><select id="xty">${DT.map(t=>`<option ${t===ty?"selected":""}>${esc(t)}</option>`).join("")}</select><button type="button" class="btn sm pri" id="xup"><i data-lucide="upload"></i>Upload (Photo / PDF)</button><button type="button" class="btn sm" id="xcm"><i data-lucide="camera"></i>Take photo</button></div>
     <input type="file" id="xf" hidden multiple accept="${ACCEPT}"><input type="file" id="xg" hidden accept="image/*" capture="environment">
-    <p class="sub" style="margin:12px 0 0;font-size:12px">Stored as a compressed copy (photos max 1600 px, PDF max 3 MB). Private – staff login only.</p>
+    <p class="sub" style="margin:12px 0 0;font-size:12px">Stored as a compressed copy (photos max 1600 px, PDF max 10 MB). Private – staff login only.</p>
     <div class="ma"><button type="button" class="btn" id="mc">Close</button></div>`;
     $("#mc").onclick=closeM;ic()};
   F.onsubmit=e=>e.preventDefault();

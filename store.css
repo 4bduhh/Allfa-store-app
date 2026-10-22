@@ -161,3 +161,9 @@ a.btn{text-decoration:none;color:inherit}a.btn.pri{color:#fff}
 /* board: drag & drop */
 .bcard{cursor:grab;user-select:none}.bcard:active{cursor:grabbing}.bcard.drag{opacity:.45;transform:scale(.97)}
 .bcol{transition:.15s;min-height:140px}.bcol.over{outline:2px dashed var(--gd);outline-offset:-4px;background:#f1e6f4}
+/* per-document optional upload (New application > Documents received) */
+.ckr{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ckr .ck{flex:1;min-width:0}
+.rup{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.rup small{color:var(--gd);font-size:12px;font-weight:500;white-space:nowrap}
+.rup .btn.sm svg{width:14px;height:14px}

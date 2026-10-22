@@ -1,4 +1,4 @@
-const CACHE = "allfa-store-v6";
+const CACHE = "allfa-store-v8";
 const SHELL = ["./","index.html","store.css","store.js","jsQR.js","manifest.json","icon-192.png","icon-512.png","allfa-logo-purple.png","favicon.png"];
 
 self.addEventListener("install", e => {
